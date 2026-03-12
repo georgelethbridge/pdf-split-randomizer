@@ -3,39 +3,47 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PDF Splitter - Multi File / ZIP Input</title>
+  <title>PDF Splitter with Review Carousel</title>
 
   <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <style>
     body {
       font-family: Arial, sans-serif;
       background: #f4f4f4;
       margin: 0;
-      padding: 40px;
-      text-align: center;
+      padding: 30px;
+      color: #222;
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
     }
 
     h1 {
+      text-align: center;
       margin-bottom: 10px;
     }
 
-    p {
+    p.desc {
+      text-align: center;
       color: #555;
       max-width: 900px;
-      margin: 0 auto 12px auto;
+      margin: 0 auto 20px auto;
     }
 
     #dropZone {
       border: 3px dashed #888;
       background: white;
       border-radius: 12px;
-      padding: 40px;
-      margin: 30px auto;
-      max-width: 760px;
-      transition: 0.2s;
+      padding: 36px;
+      margin: 20px auto;
+      text-align: center;
       cursor: pointer;
+      transition: 0.2s;
     }
 
     #dropZone.dragover {
@@ -47,50 +55,470 @@
       display: none;
     }
 
-    #status {
-      margin-top: 25px;
-      white-space: pre-line;
-      max-width: 1000px;
-      margin-left: auto;
-      margin-right: auto;
-      text-align: left;
+    .panel {
       background: white;
-      padding: 20px;
       border-radius: 12px;
+      padding: 18px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      min-height: 120px;
+      margin-top: 20px;
+    }
+
+    #status {
+      white-space: pre-line;
+      min-height: 100px;
+      max-height: 240px;
+      overflow: auto;
+      font-size: 14px;
+    }
+
+    #reviewSection {
+      display: none;
+      margin-top: 20px;
+    }
+
+    .review-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 15px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      background: #007bff;
+      color: white;
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #005ec7;
+    }
+
+    button.secondary {
+      background: #666;
+    }
+
+    button.secondary:hover {
+      background: #4f4f4f;
+    }
+
+    button.success {
+      background: #1f8f43;
+    }
+
+    button.success:hover {
+      background: #166d31;
+    }
+
+    button:disabled {
+      background: #b8b8b8;
+      cursor: not-allowed;
+    }
+
+    .viewer {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #e9ecef;
+      border-radius: 12px;
+      min-height: 600px;
+      padding: 20px;
+      overflow: auto;
+    }
+
+    canvas {
+      background: white;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+      max-width: 100%;
+      height: auto;
+    }
+
+    .meta {
+      color: #555;
+      font-size: 14px;
+    }
+
+    .row {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .col-main {
+      flex: 1 1 700px;
+    }
+
+    .col-side {
+      flex: 0 0 280px;
+    }
+
+    .sidebox {
+      font-size: 14px;
+      color: #444;
+      line-height: 1.5;
     }
 
     .small {
-      font-size: 14px;
+      font-size: 13px;
       color: #666;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #eef3ff;
+      color: #234;
+      font-size: 12px;
     }
   </style>
 </head>
 <body>
-  <h1>PDF Splitter</h1>
-  <p>
-    Drop PDFs or ZIP files here, or click to choose files.
-    All PDFs found will be split into single-page PDFs, shuffled together,
-    renamed randomly, and downloaded in one ZIP.
-  </p>
-  <p class="small">
-    Supported input: multiple .pdf files, multiple .zip files, or a mix of both.
-  </p>
+  <div class="wrap">
+    <h1>PDF Splitter with Review</h1>
+    <p class="desc">
+      Drop PDFs or ZIP files here. All PDFs will be split into single-page PDFs,
+      shuffled together, shown in a review carousel, and then exported into one ZIP
+      with random Scan names.
+    </p>
 
-  <div id="dropZone">
-    <strong>Drop PDF or ZIP files here</strong><br />
-    or click to select files
+    <div id="dropZone">
+      <strong>Drop PDF or ZIP files here</strong><br />
+      or click to choose files
+    </div>
+
+    <input type="file" id="fileInput" accept=".pdf,.zip,application/pdf,application/zip" multiple />
+
+    <div class="panel">
+      <div id="status">Waiting for files...</div>
+    </div>
+
+    <div id="reviewSection" class="panel">
+      <div class="review-header">
+        <div>
+          <strong>Review Pages</strong><br />
+          <span id="pageCounter" class="meta">Page 0 of 0</span>
+        </div>
+
+        <div class="controls">
+          <button id="prevBtn" class="secondary">Previous</button>
+          <button id="nextBtn" class="secondary">Next</button>
+          <button id="rotateLeftBtn">Rotate Left</button>
+          <button id="rotateRightBtn">Rotate Right</button>
+          <button id="resetRotateBtn" class="secondary">Reset Rotation</button>
+          <button id="downloadBtn" class="success">Download ZIP</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-main">
+          <div class="viewer">
+            <canvas id="previewCanvas"></canvas>
+          </div>
+        </div>
+
+        <div class="col-side">
+          <div class="sidebox">
+            <div><span class="badge">Current Page</span></div>
+            <p id="currentRotation">Rotation: 0°</p>
+            <p id="currentName">Output name: -</p>
+            <p id="currentSource">Source: hidden from export</p>
+            <p class="small">
+              Rotation changes only affect the exported single-page PDFs.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
-  <input type="file" id="fileInput" accept=".pdf,.zip,application/pdf,application/zip" multiple />
-
-  <div id="status">Waiting for files...</div>
-
   <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
     const statusBox = document.getElementById('status');
+    const reviewSection = document.getElementById('reviewSection');
+    const previewCanvas = document.getElementById('previewCanvas');
+    const pageCounter = document.getElementById('pageCounter');
+    const currentRotation = document.getElementById('currentRotation');
+    const currentName = document.getElementById('currentName');
+    const currentSource = document.getElementById('currentSource');
+
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const rotateLeftBtn = document.getElementById('rotateLeftBtn');
+    const rotateRightBtn = document.getElementById('rotateRightBtn');
+    const resetRotateBtn = document.getElementById('resetRotateBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let reviewPages = [];
+    let currentIndex = 0;
+    let usedNames = new Set();
+
+    function log(message) {
+      statusBox.textContent += `\n${message}`;
+      statusBox.scrollTop = statusBox.scrollHeight;
+    }
+
+    function resetLog(message) {
+      statusBox.textContent = message;
+    }
+
+    function shuffleArray(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    function isPdfFile(file) {
+      return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    }
+
+    function isZipFile(file) {
+      return (
+        file.type === 'application/zip' ||
+        file.type === 'application/x-zip-compressed' ||
+        file.name.toLowerCase().endsWith('.zip')
+      );
+    }
+
+    function generateUniqueScanName() {
+      let outName;
+      do {
+        outName = `Scan${Math.floor(100000 + Math.random() * 900000)}.pdf`;
+      } while (usedNames.has(outName));
+      usedNames.add(outName);
+      return outName;
+    }
+
+    async function extractPdfsFromZip(file) {
+      const foundPdfs = [];
+      const zipBytes = await file.arrayBuffer();
+      const zip = await JSZip.loadAsync(zipBytes);
+
+      for (const entryName of Object.keys(zip.files)) {
+        const entry = zip.files[entryName];
+        if (entry.dir) continue;
+        if (!entry.name.toLowerCase().endsWith('.pdf')) continue;
+
+        const pdfBytes = await entry.async('uint8array');
+        foundPdfs.push({
+          name: entry.name.split('/').pop() || 'document.pdf',
+          sourceLabel: `${file.name} -> ${entry.name}`,
+          bytes: pdfBytes
+        });
+      }
+
+      return foundPdfs;
+    }
+
+    async function collectInputPdfs(fileList) {
+      const inputFiles = Array.from(fileList);
+      const pdfs = [];
+
+      for (const file of inputFiles) {
+        if (isPdfFile(file)) {
+          log(`Found PDF: ${file.name}`);
+          pdfs.push({
+            name: file.name,
+            sourceLabel: file.name,
+            bytes: new Uint8Array(await file.arrayBuffer())
+          });
+        } else if (isZipFile(file)) {
+          log(`Opening ZIP: ${file.name}`);
+          const extracted = await extractPdfsFromZip(file);
+          log(`Found ${extracted.length} PDF(s) inside ${file.name}`);
+          pdfs.push(...extracted);
+        } else {
+          log(`Skipped unsupported file: ${file.name}`);
+        }
+      }
+
+      return pdfs;
+    }
+
+    async function buildReviewPages(inputPdfs) {
+      const pages = [];
+
+      for (const pdfFile of inputPdfs) {
+        try {
+          const srcPdfLib = await PDFLib.PDFDocument.load(pdfFile.bytes);
+          const srcPdfJs = await pdfjsLib.getDocument({ data: pdfFile.bytes }).promise;
+          const totalPages = srcPdfLib.getPageCount();
+
+          log(`Loaded ${pdfFile.name} (${totalPages} page${totalPages === 1 ? '' : 's'})`);
+
+          for (let i = 0; i < totalPages; i++) {
+            pages.push({
+              sourceLabel: pdfFile.sourceLabel,
+              sourceName: pdfFile.name,
+              srcPdfLib,
+              srcPdfJs,
+              pageIndex: i,
+              userRotation: 0,
+              outputName: generateUniqueScanName()
+            });
+          }
+        } catch (err) {
+          log(`Failed to load PDF: ${pdfFile.name} (${err.message})`);
+        }
+      }
+
+      shuffleArray(pages);
+      return pages;
+    }
+
+    async function renderCurrentPage() {
+      if (!reviewPages.length) return;
+
+      const item = reviewPages[currentIndex];
+      const page = await item.srcPdfJs.getPage(item.pageIndex + 1);
+
+      const baseViewport = page.getViewport({ scale: 1 });
+      const maxWidth = 800;
+      const scale = Math.min(maxWidth / baseViewport.width, 1.6);
+
+      const viewport = page.getViewport({
+        scale,
+        rotation: item.userRotation
+      });
+
+      const ctx = previewCanvas.getContext('2d');
+      previewCanvas.width = Math.ceil(viewport.width);
+      previewCanvas.height = Math.ceil(viewport.height);
+
+      await page.render({
+        canvasContext: ctx,
+        viewport
+      }).promise;
+
+      pageCounter.textContent = `Page ${currentIndex + 1} of ${reviewPages.length}`;
+      currentRotation.textContent = `Rotation: ${item.userRotation}°`;
+      currentName.textContent = `Output name: ${item.outputName}`;
+      currentSource.textContent = `Source: ${item.sourceName}`;
+      prevBtn.disabled = currentIndex === 0;
+      nextBtn.disabled = currentIndex === reviewPages.length - 1;
+    }
+
+    function normalizeRotation(deg) {
+      let value = deg % 360;
+      if (value < 0) value += 360;
+      return value;
+    }
+
+    async function showReview() {
+      if (!reviewPages.length) return;
+      reviewSection.style.display = 'block';
+      await renderCurrentPage();
+    }
+
+    async function handleFiles(fileList) {
+      if (!fileList || fileList.length === 0) {
+        resetLog('No files selected.');
+        return;
+      }
+
+      usedNames = new Set();
+      reviewPages = [];
+      currentIndex = 0;
+      reviewSection.style.display = 'none';
+      resetLog('Scanning selected files...');
+
+      try {
+        const inputPdfs = await collectInputPdfs(fileList);
+
+        if (inputPdfs.length === 0) {
+          log('No PDFs were available to process.');
+          return;
+        }
+
+        log(`Total PDFs to process: ${inputPdfs.length}`);
+        log('Splitting pages and preparing review list...');
+
+        reviewPages = await buildReviewPages(inputPdfs);
+
+        if (reviewPages.length === 0) {
+          log('No pages could be prepared.');
+          return;
+        }
+
+        log(`Prepared ${reviewPages.length} page(s).`);
+        log('Pages shuffled. Review is ready.');
+
+        await showReview();
+      } catch (error) {
+        console.error(error);
+        log(`Error: ${error.message}`);
+      }
+    }
+
+    async function exportReviewedPages() {
+      if (!reviewPages.length) return;
+
+      downloadBtn.disabled = true;
+      prevBtn.disabled = true;
+      nextBtn.disabled = true;
+      rotateLeftBtn.disabled = true;
+      rotateRightBtn.disabled = true;
+      resetRotateBtn.disabled = true;
+
+      try {
+        log('Building output ZIP...');
+        const outputZip = new JSZip();
+
+        for (let i = 0; i < reviewPages.length; i++) {
+          const item = reviewPages[i];
+
+          const newPdf = await PDFLib.PDFDocument.create();
+          const [copiedPage] = await newPdf.copyPages(item.srcPdfLib, [item.pageIndex]);
+          copiedPage.setRotation(PDFLib.degrees(normalizeRotation(item.userRotation)));
+          newPdf.addPage(copiedPage);
+
+          const pdfBytes = await newPdf.save();
+          outputZip.file(item.outputName, pdfBytes);
+
+          log(`Added ${item.outputName} (${i + 1}/${reviewPages.length})`);
+        }
+
+        log('Generating ZIP...');
+        const zipBlob = await outputZip.generateAsync({ type: 'blob' });
+
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(zipBlob);
+        link.download = 'split_scans_reviewed.zip';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        log('Done. Output ZIP downloaded.');
+      } catch (error) {
+        console.error(error);
+        log(`Export error: ${error.message}`);
+      } finally {
+        prevBtn.disabled = currentIndex === 0;
+        nextBtn.disabled = currentIndex === reviewPages.length - 1;
+        rotateLeftBtn.disabled = false;
+        rotateRightBtn.disabled = false;
+        resetRotateBtn.disabled = false;
+        downloadBtn.disabled = false;
+      }
+    }
 
     dropZone.addEventListener('click', () => fileInput.click());
 
@@ -113,185 +541,39 @@
       handleFiles(e.target.files);
     });
 
-    function log(message) {
-      statusBox.textContent += `\n${message}`;
-      statusBox.scrollTop = statusBox.scrollHeight;
-    }
-
-    function resetLog(message) {
-      statusBox.textContent = message;
-    }
-
-    function shuffleArray(array) {
-      for (let i = array.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [array[i], array[j]] = [array[j], array[i]];
+    prevBtn.addEventListener('click', async () => {
+      if (currentIndex > 0) {
+        currentIndex--;
+        await renderCurrentPage();
       }
-      return array;
-    }
+    });
 
-    function generateUniqueScanName(usedNames) {
-      let outName;
-      do {
-        outName = `Scan${Math.floor(100000 + Math.random() * 900000)}.pdf`;
-      } while (usedNames.has(outName));
-      usedNames.add(outName);
-      return outName;
-    }
-
-    function isPdfFile(file) {
-      return (
-        file.type === 'application/pdf' ||
-        file.name.toLowerCase().endsWith('.pdf')
-      );
-    }
-
-    function isZipFile(file) {
-      return (
-        file.type === 'application/zip' ||
-        file.type === 'application/x-zip-compressed' ||
-        file.name.toLowerCase().endsWith('.zip')
-      );
-    }
-
-    async function extractPdfsFromZip(file) {
-      const foundPdfs = [];
-      const arrayBuffer = await file.arrayBuffer();
-      const zip = await JSZip.loadAsync(arrayBuffer);
-
-      const entries = Object.keys(zip.files);
-
-      for (const entryName of entries) {
-        const entry = zip.files[entryName];
-
-        if (entry.dir) continue;
-        if (!entry.name.toLowerCase().endsWith('.pdf')) continue;
-
-        const pdfBytes = await entry.async('uint8array');
-
-        foundPdfs.push({
-          name: entry.name.split('/').pop() || 'document.pdf',
-          sourceLabel: `${file.name} -> ${entry.name}`,
-          bytes: pdfBytes
-        });
+    nextBtn.addEventListener('click', async () => {
+      if (currentIndex < reviewPages.length - 1) {
+        currentIndex++;
+        await renderCurrentPage();
       }
+    });
 
-      return foundPdfs;
-    }
+    rotateLeftBtn.addEventListener('click', async () => {
+      if (!reviewPages.length) return;
+      reviewPages[currentIndex].userRotation = normalizeRotation(reviewPages[currentIndex].userRotation - 90);
+      await renderCurrentPage();
+    });
 
-    async function collectInputPdfs(fileList) {
-      const inputFiles = Array.from(fileList);
-      const pdfs = [];
+    rotateRightBtn.addEventListener('click', async () => {
+      if (!reviewPages.length) return;
+      reviewPages[currentIndex].userRotation = normalizeRotation(reviewPages[currentIndex].userRotation + 90);
+      await renderCurrentPage();
+    });
 
-      for (const file of inputFiles) {
-        if (isPdfFile(file)) {
-          log(`Found PDF: ${file.name}`);
-          const bytes = new Uint8Array(await file.arrayBuffer());
-          pdfs.push({
-            name: file.name,
-            sourceLabel: file.name,
-            bytes
-          });
-        } else if (isZipFile(file)) {
-          log(`Opening ZIP: ${file.name}`);
-          const extracted = await extractPdfsFromZip(file);
+    resetRotateBtn.addEventListener('click', async () => {
+      if (!reviewPages.length) return;
+      reviewPages[currentIndex].userRotation = 0;
+      await renderCurrentPage();
+    });
 
-          if (extracted.length === 0) {
-            log(`No PDFs found inside ZIP: ${file.name}`);
-          } else {
-            log(`Found ${extracted.length} PDF(s) inside ${file.name}`);
-            pdfs.push(...extracted);
-          }
-        } else {
-          log(`Skipped unsupported file: ${file.name}`);
-        }
-      }
-
-      return pdfs;
-    }
-
-    async function handleFiles(fileList) {
-      if (!fileList || fileList.length === 0) {
-        resetLog('No files selected.');
-        return;
-      }
-
-      resetLog('Scanning selected files...');
-
-      try {
-        const inputPdfs = await collectInputPdfs(fileList);
-
-        if (inputPdfs.length === 0) {
-          log('No PDFs were available to process.');
-          return;
-        }
-
-        log(`Total PDFs to process: ${inputPdfs.length}`);
-
-        const allPages = [];
-
-        for (const pdfFile of inputPdfs) {
-          try {
-            const srcPdf = await PDFLib.PDFDocument.load(pdfFile.bytes);
-            const totalPages = srcPdf.getPageCount();
-
-            log(`Loaded ${pdfFile.name} (${totalPages} page${totalPages === 1 ? '' : 's'})`);
-
-            for (let i = 0; i < totalPages; i++) {
-              allPages.push({
-                srcPdf,
-                pageIndex: i,
-                sourceLabel: pdfFile.sourceLabel
-              });
-            }
-          } catch (err) {
-            log(`Failed to read PDF: ${pdfFile.name} (${err.message})`);
-          }
-        }
-
-        if (allPages.length === 0) {
-          log('No pages could be extracted.');
-          return;
-        }
-
-        log(`Total pages collected: ${allPages.length}`);
-        log('Shuffling all pages...');
-        shuffleArray(allPages);
-
-        const outputZip = new JSZip();
-        const usedNames = new Set();
-
-        for (let i = 0; i < allPages.length; i++) {
-          const pageInfo = allPages[i];
-
-          const newPdf = await PDFLib.PDFDocument.create();
-          const [copiedPage] = await newPdf.copyPages(pageInfo.srcPdf, [pageInfo.pageIndex]);
-          newPdf.addPage(copiedPage);
-
-          const pdfBytes = await newPdf.save();
-          const outName = generateUniqueScanName(usedNames);
-
-          outputZip.file(outName, pdfBytes);
-
-          log(`Created ${outName} (${i + 1}/${allPages.length})`);
-        }
-
-        log('Building output ZIP...');
-        const zipBlob = await outputZip.generateAsync({ type: 'blob' });
-
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(zipBlob);
-        link.download = 'split_scans_randomised.zip';
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-
-        log('Done. Output ZIP downloaded.');
-      } catch (error) {
-        console.error(error);
-        log(`Error: ${error.message}`);
-      }
-    }
+    downloadBtn.addEventListener('click', exportReviewedPages);
   </script>
 </body>
 </html>
