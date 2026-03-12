@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PDF Splitter with Review Carousel</title>
+  <title>PDF Splitter with Review</title>
 
   <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -132,15 +132,25 @@
       align-items: center;
       background: #e9ecef;
       border-radius: 12px;
-      min-height: 600px;
+      height: 700px;
       padding: 20px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #canvasWrap {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       overflow: auto;
     }
 
     canvas {
       background: white;
       box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-      max-width: 100%;
+      max-width: none;
       height: auto;
     }
 
@@ -217,6 +227,7 @@
           <button id="nextBtn" class="secondary">Next</button>
           <button id="rotateLeftBtn">Rotate Left</button>
           <button id="rotateRightBtn">Rotate Right</button>
+          <button id="rotate180Btn">Rotate 180°</button>
           <button id="resetRotateBtn" class="secondary">Reset Rotation</button>
           <button id="downloadBtn" class="success">Download ZIP</button>
         </div>
@@ -225,7 +236,9 @@
       <div class="row">
         <div class="col-main">
           <div class="viewer">
-            <canvas id="previewCanvas"></canvas>
+            <div id="canvasWrap">
+              <canvas id="previewCanvas"></canvas>
+            </div>
           </div>
         </div>
 
@@ -237,6 +250,9 @@
             <p id="currentSource">Source: hidden from export</p>
             <p class="small">
               Rotation changes only affect the exported single-page PDFs.
+            </p>
+            <p class="small">
+              Keyboard shortcuts: Left/Right = previous/next page, Up/Down = rotate 180°.
             </p>
           </div>
         </div>
@@ -253,6 +269,7 @@
     const statusBox = document.getElementById('status');
     const reviewSection = document.getElementById('reviewSection');
     const previewCanvas = document.getElementById('previewCanvas');
+    const canvasWrap = document.getElementById('canvasWrap');
     const pageCounter = document.getElementById('pageCounter');
     const currentRotation = document.getElementById('currentRotation');
     const currentName = document.getElementById('currentName');
@@ -262,6 +279,7 @@
     const nextBtn = document.getElementById('nextBtn');
     const rotateLeftBtn = document.getElementById('rotateLeftBtn');
     const rotateRightBtn = document.getElementById('rotateRightBtn');
+    const rotate180Btn = document.getElementById('rotate180Btn');
     const resetRotateBtn = document.getElementById('resetRotateBtn');
     const downloadBtn = document.getElementById('downloadBtn');
 
@@ -305,6 +323,12 @@
       } while (usedNames.has(outName));
       usedNames.add(outName);
       return outName;
+    }
+
+    function normalizeRotation(deg) {
+      let value = deg % 360;
+      if (value < 0) value += 360;
+      return value;
     }
 
     async function extractPdfsFromZip(file) {
@@ -390,9 +414,18 @@
       const item = reviewPages[currentIndex];
       const page = await item.srcPdfJs.getPage(item.pageIndex + 1);
 
-      const baseViewport = page.getViewport({ scale: 1 });
-      const maxWidth = 800;
-      const scale = Math.min(maxWidth / baseViewport.width, 1.6);
+      const wrapWidth = Math.max(canvasWrap.clientWidth - 20, 300);
+      const wrapHeight = Math.max(canvasWrap.clientHeight - 20, 300);
+
+      const unscaledViewport = page.getViewport({
+        scale: 1,
+        rotation: item.userRotation
+      });
+
+      const scale = Math.min(
+        wrapWidth / unscaledViewport.width,
+        wrapHeight / unscaledViewport.height
+      );
 
       const viewport = page.getViewport({
         scale,
@@ -402,6 +435,8 @@
       const ctx = previewCanvas.getContext('2d');
       previewCanvas.width = Math.ceil(viewport.width);
       previewCanvas.height = Math.ceil(viewport.height);
+
+      ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
 
       await page.render({
         canvasContext: ctx,
@@ -414,12 +449,6 @@
       currentSource.textContent = `Source: ${item.sourceName}`;
       prevBtn.disabled = currentIndex === 0;
       nextBtn.disabled = currentIndex === reviewPages.length - 1;
-    }
-
-    function normalizeRotation(deg) {
-      let value = deg % 360;
-      if (value < 0) value += 360;
-      return value;
     }
 
     async function showReview() {
@@ -476,6 +505,7 @@
       nextBtn.disabled = true;
       rotateLeftBtn.disabled = true;
       rotateRightBtn.disabled = true;
+      rotate180Btn.disabled = true;
       resetRotateBtn.disabled = true;
 
       try {
@@ -515,6 +545,7 @@
         nextBtn.disabled = currentIndex === reviewPages.length - 1;
         rotateLeftBtn.disabled = false;
         rotateRightBtn.disabled = false;
+        rotate180Btn.disabled = false;
         resetRotateBtn.disabled = false;
         downloadBtn.disabled = false;
       }
@@ -567,6 +598,12 @@
       await renderCurrentPage();
     });
 
+    rotate180Btn.addEventListener('click', async () => {
+      if (!reviewPages.length) return;
+      reviewPages[currentIndex].userRotation = normalizeRotation(reviewPages[currentIndex].userRotation + 180);
+      await renderCurrentPage();
+    });
+
     resetRotateBtn.addEventListener('click', async () => {
       if (!reviewPages.length) return;
       reviewPages[currentIndex].userRotation = 0;
@@ -574,6 +611,44 @@
     });
 
     downloadBtn.addEventListener('click', exportReviewedPages);
+
+    document.addEventListener('keydown', async (e) => {
+      if (!reviewPages.length) return;
+
+      const tag = (document.activeElement?.tagName || '').toLowerCase();
+      const isTyping =
+        tag === 'input' ||
+        tag === 'textarea' ||
+        document.activeElement?.isContentEditable;
+
+      if (isTyping) return;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (currentIndex > 0) {
+          currentIndex--;
+          await renderCurrentPage();
+        }
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (currentIndex < reviewPages.length - 1) {
+          currentIndex++;
+          await renderCurrentPage();
+        }
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        reviewPages[currentIndex].userRotation = normalizeRotation(
+          reviewPages[currentIndex].userRotation + 180
+        );
+        await renderCurrentPage();
+      }
+    });
+
+    window.addEventListener('resize', async () => {
+      if (reviewPages.length && reviewSection.style.display !== 'none') {
+        await renderCurrentPage();
+      }
+    });
   </script>
 </body>
 </html>
